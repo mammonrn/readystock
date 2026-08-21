@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const Database = require('better-sqlite3');
-const { uniquePrefix, formatItemCode, nextSequence } = require('./codes');
+const { uniquePrefix, formatItemCode, allocateSequence, bumpCounter } = require('./codes');
 
 const DEFAULT_OFFICES = ['SH666', 'SH999', 'UB89', '88F'];
 const DEFAULT_CATEGORIES = [
@@ -52,6 +52,14 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE INDEX IF NOT EXISTS idx_items_name     ON items(name);
 CREATE INDEX IF NOT EXISTS idx_items_office   ON items(office_id);
 CREATE INDEX IF NOT EXISTS idx_items_category ON items(category_id);
+
+-- ตัวนับเลขรหัสสินค้า เก็บแยกตาม prefix โดยตรง (ไม่ผูกกับ category_id)
+-- เดินหน้าอย่างเดียวไม่ถอยหลัง ลบสินค้าแล้วเลขนั้นจะไม่ถูกนำกลับมาใช้ซ้ำ
+CREATE TABLE IF NOT EXISTS prefix_counters (
+  prefix      TEXT PRIMARY KEY,
+  last_number INTEGER NOT NULL DEFAULT 0,
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 CREATE TABLE IF NOT EXISTS activity_logs (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,10 +126,29 @@ function backfill(db) {
       .all();
     for (const item of pending) {
       db.prepare('UPDATE items SET item_code = ? WHERE id = ?').run(
-        formatItemCode(item.code_prefix, nextSequence(db, item.code_prefix)),
+        formatItemCode(item.code_prefix, allocateSequence(db, item.code_prefix)),
         item.id
       );
     }
+
+    // ตั้งตัวนับของทุก prefix ให้ไม่ต่ำกว่าเลขสูงสุดที่เคยออกไปแล้ว
+    // (สำหรับฐานข้อมูลเดิมที่ออกรหัสไว้ก่อนจะมีตาราง prefix_counters)
+    //
+    // ดึง prefix จากตัวรหัสสินค้าเองโดยตัดเลข 4 หลักท้ายออก ไม่ได้ดูจาก categories
+    // เพราะ prefix ที่เคยออกรหัสไปแล้วอาจไม่ได้ผูกกับหมวดหมู่ไหนอยู่ (ถูกเปลี่ยน/ลบไปแล้ว)
+    // แต่รหัสเก่ายังอยู่ จึงต้องกันไม่ให้ออกซ้ำ
+    const issued = db
+      .prepare(
+        `SELECT SUBSTR(item_code, 1, LENGTH(item_code) - 4) AS prefix,
+                MAX(CAST(SUBSTR(item_code, LENGTH(item_code) - 3) AS INTEGER)) AS last_number
+           FROM items
+          WHERE item_code IS NOT NULL
+            AND LENGTH(item_code) > 4
+            AND SUBSTR(item_code, LENGTH(item_code) - 3) GLOB '[0-9][0-9][0-9][0-9]'
+          GROUP BY prefix`
+      )
+      .all();
+    for (const row of issued) bumpCounter(db, row.prefix, row.last_number);
   });
   fill();
 }

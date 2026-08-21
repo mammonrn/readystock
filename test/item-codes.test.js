@@ -129,21 +129,43 @@ test('รหัสสินค้า: ย้ายหมวดหมู่แล
   db.close();
 });
 
-test('รหัสสินค้า: เลขนับจากสินค้าที่มีอยู่จริง ลบตัวล่าสุดแล้วเลขนั้นถูกนำกลับมาใช้ใหม่', () => {
+test('รหัสสินค้า: ลบสินค้าที่เลขสูงสุดทิ้ง แล้วเพิ่มใหม่ต้องได้เลขถัดไป ไม่ใช่เลขที่เพิ่งลบ', () => {
   const { db, user, add } = setup();
   add('ของ 1');
-  const second = add('ของ 2');
+  add('ของ 2');
   const third = add('ของ 3');
   assert.equal(third.item_code, 'TLP0003');
 
-  // ลบตัวกลาง: เลขสูงสุดยังเป็น 3 อยู่ ตัวถัดไปจึงเป็น 4 (ไม่ไปเติมช่องว่างตรงกลาง)
-  items.deleteItem(db, second.id, user.id);
-  assert.equal(add('ของ 4').item_code, 'TLP0004');
+  items.deleteItem(db, third.id, user.id);
+  const next = add('ของ 4');
+  assert.equal(next.item_code, 'TLP0004', 'ต้องเดินหน้าต่อ ไม่กลับไปใช้ TLP0003 ที่เพิ่งลบไป');
+  assert.notEqual(next.item_code, third.item_code);
+  db.close();
+});
 
-  // ลบตัวที่เลขสูงสุด: เลขนั้นว่างลงและถูกนำกลับมาใช้กับสินค้าใหม่
-  items.deleteItem(db, items.listItems(db, { q: 'TLP0004' }).rows[0].id, user.id);
-  assert.equal(add('ของ 5').item_code, 'TLP0004');
-  assert.equal(items.listItems(db).rows.filter((r) => r.item_code === 'TLP0004').length, 1, 'ต้องมีรหัสนี้แค่ตัวเดียว');
+test('รหัสสินค้า: ลบสินค้าทั้งหมดในหมวดแล้วเพิ่มใหม่ ตัวนับก็ยังเดินหน้าต่อ', () => {
+  const { db, user, add } = setup();
+  const created = [add('ของ 1'), add('ของ 2'), add('ของ 3')];
+  for (const item of created) items.deleteItem(db, item.id, user.id);
+  assert.equal(items.listItems(db).total, 0);
+
+  assert.equal(add('ของใหม่').item_code, 'TLP0004', 'ตัวนับไม่ถอยหลังแม้ในหมวดจะไม่เหลือสินค้าเลย');
+  assert.equal(codes.currentCounter(db, 'TLP'), 4);
+  db.close();
+});
+
+test('รหัสสินค้า: ตัวนับเก็บแยกตาม prefix และเดินหน้าอย่างเดียว', () => {
+  const { db, computer, add } = setup();
+  assert.equal(codes.currentCounter(db, 'TLP'), 0, 'prefix ที่ยังไม่เคยใช้ต้องเริ่มที่ 0');
+
+  add('ของ 1');
+  add('ของ 2');
+  assert.equal(codes.currentCounter(db, 'TLP'), 2);
+  assert.equal(codes.currentCounter(db, 'COM'), 0, 'ตัวนับของแต่ละ prefix แยกกัน');
+
+  add('คอม 1', computer);
+  assert.equal(codes.currentCounter(db, 'COM'), 1);
+  assert.equal(codes.currentCounter(db, 'TLP'), 2);
   db.close();
 });
 
@@ -186,14 +208,23 @@ test('รหัสสินค้า: เพิ่มสินค้ารวด
 
 // ---------- กันรหัสชนกันเมื่อมีการเขียนพร้อมกัน ----------
 
-/** db ปลอมที่แกล้งอ่านเลขลำดับล่าสุดได้ค่าเก่า เหมือนมีอีกโปรเซสแทรกเข้ามาหลังเราอ่านไปแล้ว */
-function staleDb(db) {
+/**
+ * db ปลอมที่แกล้งจองเลขได้ค่าเก่าใน 3 ครั้งแรก
+ * เหมือนกรณีที่รหัสนั้นถูกใช้ไปแล้ว (เช่นข้อมูลเก่าที่ออกรหัสไว้ก่อนมีตัวนับ)
+ * ใช้ตรวจว่า createItem จะจองเลขใหม่แล้วลองใหม่จนสำเร็จ ไม่ใช่โยน error ออกมา
+ */
+function staleDb(db, staleValues = [1, 2, 3]) {
+  const queue = [...staleValues];
   return new Proxy(db, {
     get(target, prop, receiver) {
       if (prop === 'prepare') {
         return (sql) => {
-          if (sql.includes('MAX(CAST(SUBSTR(item_code')) return { get: () => ({ n: 0 }) };
-          return target.prepare(sql);
+          const statement = target.prepare(sql);
+          if (!sql.includes('prefix_counters') || !sql.includes('RETURNING')) return statement;
+          return {
+            // ระหว่างที่ยังมีค่าเก่าค้างอยู่ ให้คืนค่าเก่าโดยไม่แตะตัวนับจริง
+            get: (...args) => (queue.length ? { last_number: queue.shift() } : statement.get(...args)),
+          };
         };
       }
       const value = Reflect.get(target, prop, receiver);
@@ -202,13 +233,12 @@ function staleDb(db) {
   });
 }
 
-test('race condition: ถ้าเลขที่คำนวณได้ถูกใช้ไปแล้ว ต้องขยับไปเลขถัดไปแทนที่จะพัง', () => {
+test('race condition: ถ้าเลขที่จองได้ถูกใช้ไปแล้ว ต้องจองเลขใหม่แทนที่จะพัง', () => {
   const { db, user, office, phone, add } = setup();
   add('ของ 1');
   add('ของ 2');
   add('ของ 3');
 
-  // เขียนสินค้าใหม่โดยอ่านเลขล่าสุดได้ค่าเก่า (จำลองอีกโปรเซสแทรกเข้ามาก่อน)
   const item = items.createItem(
     staleDb(db),
     { name: 'ของ 4', quantity: 1, categoryId: phone, officeId: office },
@@ -333,5 +363,154 @@ test('อัปเกรดฐานข้อมูลเดิม: เพิ่
     ['TLP0001', 'COM0001', 'TLP0002']
   );
   again.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------- ตัวนับผูกกับ prefix ไม่ใช่หมวดหมู่ ----------
+
+test('เปลี่ยน prefix ของหมวดหมู่: prefix ใหม่ที่ยังไม่เคยถูกใช้ ต้องเริ่มนับที่ 1', () => {
+  const { db, phone, add } = setup();
+  add('ของ 1');
+  add('ของ 2');
+  assert.equal(codes.currentCounter(db, 'TLP'), 2);
+
+  taxonomy.rename(db, 'categories', phone, 'โทรศัพท์', { codePrefix: 'PHN' });
+  assert.equal(codes.currentCounter(db, 'PHN'), 0, 'prefix ใหม่ยังไม่เคยถูกใช้ ต้องเริ่มที่ 0');
+  assert.equal(add('ของ 3').item_code, 'PHN0001');
+  assert.equal(codes.currentCounter(db, 'TLP'), 2, 'ตัวนับของ prefix เดิมต้องไม่ถูกแตะ');
+  db.close();
+});
+
+test('เปลี่ยน prefix ไปใช้ prefix ที่เคยมีสินค้าใช้อยู่ก่อนแล้ว ต้องนับต่อจากของเดิม', () => {
+  const { db, phone, computer, add } = setup();
+  add('มือถือ 1', phone);
+  add('มือถือ 2', phone);
+  add('คอม 1', computer);
+  assert.equal(codes.currentCounter(db, 'TLP'), 2);
+
+  // ย้าย prefix ของหมวดโทรศัพท์ไปเป็น PHN เพื่อปล่อย TLP ให้ว่าง
+  taxonomy.rename(db, 'categories', phone, 'โทรศัพท์', { codePrefix: 'PHN' });
+  // แล้วให้หมวดคอมพิวเตอร์มาใช้ TLP แทน
+  taxonomy.rename(db, 'categories', computer, 'คอมพิวเตอร์', { codePrefix: 'TLP' });
+
+  const item = add('คอม 2', computer);
+  assert.equal(item.item_code, 'TLP0003', 'ต้องนับต่อจากตัวนับเดิมของ TLP ไม่ใช่เริ่มใหม่ที่ 1');
+  assert.equal(items.listItems(db, { q: 'TLP0001' }).rows[0].name, 'มือถือ 1', 'TLP0001 ยังเป็นของเดิม');
+  assert.equal(new Set(items.listItems(db).rows.map((r) => r.item_code)).size, 4, 'ทุกรหัสต้องไม่ซ้ำกัน');
+  db.close();
+});
+
+test('สองหมวดหมู่ใช้ prefix เดียวกันคนละช่วงเวลา: รหัสต้องไม่ชนกันข้ามหมวดหมู่', () => {
+  const { db, user, office, phone, add } = setup();
+  add('มือถือ 1');
+  add('มือถือ 2');
+
+  // ปล่อย prefix TLP ให้ว่าง แล้วสร้างหมวดหมู่ใหม่มาใช้ TLP ต่อ
+  taxonomy.rename(db, 'categories', phone, 'โทรศัพท์', { codePrefix: 'PHN' });
+  const reuse = taxonomy.create(db, 'categories', 'อุปกรณ์เสริมมือถือ', { codePrefix: 'TLP' });
+
+  const first = items.createItem(db, { name: 'เคส', quantity: 1, categoryId: reuse.id, officeId: office }, user.id);
+  const second = items.createItem(db, { name: 'ฟิล์ม', quantity: 1, categoryId: reuse.id, officeId: office }, user.id);
+
+  assert.equal(first.item_code, 'TLP0003', 'หมวดใหม่ต้องนับต่อจากเลขที่ prefix นี้เคยออกไปแล้ว');
+  assert.equal(second.item_code, 'TLP0004');
+
+  const all = items.listItems(db).rows.map((r) => r.item_code);
+  assert.equal(new Set(all).size, all.length, 'รหัสทั้งระบบต้องไม่ซ้ำกัน');
+  assert.deepEqual([...all].sort(), ['TLP0001', 'TLP0002', 'TLP0003', 'TLP0004']);
+  db.close();
+});
+
+test('ลบหมวดหมู่แล้วสร้างใหม่ด้วย prefix เดิม ตัวนับต้องไม่ถูกรีเซ็ต', () => {
+  const { db, user, office } = setup();
+  const temp = taxonomy.create(db, 'categories', 'ชั่วคราว', { codePrefix: 'TMP' });
+  const item = items.createItem(db, { name: 'ของ', quantity: 1, categoryId: temp.id, officeId: office }, user.id);
+  assert.equal(item.item_code, 'TMP0001');
+
+  items.deleteItem(db, item.id, user.id);
+  taxonomy.remove(db, 'categories', temp.id);
+
+  const again = taxonomy.create(db, 'categories', 'ชั่วคราวรอบสอง', { codePrefix: 'TMP' });
+  const newItem = items.createItem(db, { name: 'ของใหม่', quantity: 1, categoryId: again.id, officeId: office }, user.id);
+  assert.equal(newItem.item_code, 'TMP0002', 'ตัวนับของ prefix ต้องอยู่รอดแม้หมวดหมู่จะถูกลบไปแล้ว');
+  db.close();
+});
+
+test('อัปเกรดฐานข้อมูลเดิม: ตัวนับต้องถูกตั้งให้ไม่ต่ำกว่ารหัสสูงสุดที่เคยออกไปแล้ว', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readystock-counter-'));
+  const file = path.join(dir, 'old.sqlite');
+
+  const Database = require('better-sqlite3');
+  const old = new Database(file);
+  old.exec(`
+    CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user', created_at TEXT NOT NULL DEFAULT (datetime('now')));
+    CREATE TABLE offices (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')));
+    CREATE TABLE categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+      code_prefix TEXT, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+    CREATE TABLE items (id INTEGER PRIMARY KEY AUTOINCREMENT, item_code TEXT, name TEXT NOT NULL,
+      category_id INTEGER NOT NULL REFERENCES categories(id), office_id INTEGER NOT NULL REFERENCES offices(id),
+      quantity INTEGER NOT NULL DEFAULT 0, unit TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_by INTEGER REFERENCES users(id));
+    INSERT INTO offices (name) VALUES ('SH666');
+    INSERT INTO categories (name, code_prefix, sort_order) VALUES ('โทรศัพท์', 'TLP', 1), ('คอมพิวเตอร์', 'COM', 2);
+    INSERT INTO items (item_code, name, category_id, office_id, quantity) VALUES
+      ('TLP0001', 'ของเก่า 1', 1, 1, 5), ('TLP0007', 'ของเก่า 2', 1, 1, 2), ('COM0003', 'ของเก่า 3', 2, 1, 1);
+  `);
+  old.close();
+
+  const db = openDb(file);
+  assert.equal(codes.currentCounter(db, 'TLP'), 7, 'ต้องตั้งตัวนับตามรหัสสูงสุดที่เคยออก');
+  assert.equal(codes.currentCounter(db, 'COM'), 3);
+
+  const user = makeUser(db, 'boss');
+  const office = db.prepare("SELECT id FROM offices WHERE name = 'SH666'").get().id;
+  const created = items.createItem(db, { name: 'ของใหม่', quantity: 1, categoryId: 1, officeId: office }, user.id);
+  assert.equal(created.item_code, 'TLP0008', 'สินค้าใหม่ต้องไม่ไปชนรหัสเดิม');
+
+  db.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('อัปเกรดฐานข้อมูลเดิม: prefix ที่ไม่ได้ผูกกับหมวดหมู่ไหนแล้ว ก็ต้องกันรหัสซ้ำด้วย', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readystock-orphan-'));
+  const file = path.join(dir, 'old.sqlite');
+
+  const Database = require('better-sqlite3');
+  const old = new Database(file);
+  old.exec(`
+    CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user', created_at TEXT NOT NULL DEFAULT (datetime('now')));
+    CREATE TABLE offices (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')));
+    CREATE TABLE categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+      code_prefix TEXT, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+    CREATE TABLE items (id INTEGER PRIMARY KEY AUTOINCREMENT, item_code TEXT, name TEXT NOT NULL,
+      category_id INTEGER NOT NULL REFERENCES categories(id), office_id INTEGER NOT NULL REFERENCES offices(id),
+      quantity INTEGER NOT NULL DEFAULT 0, unit TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_by INTEGER REFERENCES users(id));
+    INSERT INTO offices (name) VALUES ('SH666');
+    -- หมวดหมู่ใช้ prefix PHN อยู่ แต่มีสินค้าเก่าที่ยังถือรหัส TLP อยู่ (เคยเปลี่ยน prefix มาก่อน)
+    INSERT INTO categories (name, code_prefix, sort_order) VALUES ('โทรศัพท์', 'PHN', 1);
+    INSERT INTO items (item_code, name, category_id, office_id, quantity) VALUES
+      ('TLP0001', 'ของเก่า 1', 1, 1, 5), ('TLP0005', 'ของเก่า 2', 1, 1, 2), ('TLP20003', 'ของเก่า 3', 1, 1, 1);
+  `);
+  old.close();
+
+  const db = openDb(file);
+  assert.equal(codes.currentCounter(db, 'TLP'), 5, 'ตัวนับของ prefix ที่ไม่มีหมวดหมู่แล้วก็ต้องถูกตั้งไว้');
+  assert.equal(codes.currentCounter(db, 'TLP2'), 3, 'prefix ที่ลงท้ายด้วยตัวเลขต้องแยกออกถูกต้อง');
+
+  // ถ้ามีหมวดหมู่มาใช้ TLP อีกครั้ง ต้องนับต่อจากของเดิม ไม่ชนรหัสเก่า
+  const user = makeUser(db, 'boss');
+  const office = db.prepare("SELECT id FROM offices WHERE name = 'SH666'").get().id;
+  const reuse = taxonomy.create(db, 'categories', 'อุปกรณ์เสริม', { codePrefix: 'TLP' });
+  const created = items.createItem(db, { name: 'ของใหม่', quantity: 1, categoryId: reuse.id, officeId: office }, user.id);
+  assert.equal(created.item_code, 'TLP0006');
+
+  db.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
