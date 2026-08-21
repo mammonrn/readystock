@@ -1,14 +1,8 @@
 'use strict';
 
 const { hashPassword, verifyPassword, validateCredentials } = require('../auth');
-
-class AppError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'AppError';
-    this.expected = true;
-  }
-}
+const { AppError } = require('../errors');
+const invites = require('./invites');
 
 function countUsers(db) {
   return db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
@@ -31,24 +25,34 @@ function listUsers(db) {
 }
 
 /**
- * สมัครสมาชิกใหม่ — ต้องกรอกรหัสเชิญให้ตรงกับ INVITE_CODE
- * ผู้ใช้คนแรกของระบบจะได้สิทธิ์ admin โดยอัตโนมัติ
+ * สมัครสมาชิกใหม่ — ต้องใช้รหัสเชิญแบบสุ่มที่ผู้ดูแลระบบสร้างจากหน้า "จัดการระบบ"
+ * รหัสหนึ่งรหัสใช้ได้ครั้งเดียวและหมดอายุใน 24 ชั่วโมง
+ *
+ * ข้อยกเว้น: ถ้ายังไม่มีผู้ใช้ในระบบเลย (ติดตั้งใหม่) ผู้ใช้คนแรกสมัครได้โดยไม่ต้องมีรหัสเชิญ
+ * และได้สิทธิ์ admin อัตโนมัติ เพราะยังไม่มีใครสร้างรหัสเชิญให้ได้
  */
-function register(db, { username, password, inviteCode, expectedInviteCode }) {
+function register(db, { username, password, inviteCode }) {
   const name = String(username || '').trim();
   const invalid = validateCredentials(name, password);
   if (invalid) throw new AppError(invalid);
 
-  if (!expectedInviteCode) throw new AppError('ระบบยังไม่ได้ตั้งค่ารหัสเชิญ (INVITE_CODE) กรุณาติดต่อผู้ดูแล');
-  if (String(inviteCode || '').trim() !== String(expectedInviteCode)) throw new AppError('รหัสเชิญไม่ถูกต้อง');
-
+  const isFirstUser = countUsers(db) === 0;
   if (findByUsername(db, name)) throw new AppError('มีชื่อผู้ใช้นี้ในระบบแล้ว');
 
-  const role = countUsers(db) === 0 ? 'admin' : 'user';
-  const info = db
-    .prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
-    .run(name, hashPassword(password), role);
-  return findById(db, info.lastInsertRowid);
+  const create = db.transaction(() => {
+    // ตรวจรหัสเชิญก่อนสร้างผู้ใช้ ถ้ารหัสใช้ไม่ได้จะโยน error ออกไปโดยไม่สร้างอะไรเลย
+    const invite = isFirstUser ? null : invites.assertUsable(db, inviteCode);
+
+    const role = isFirstUser ? 'admin' : 'user';
+    const info = db
+      .prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
+      .run(name, hashPassword(password), role);
+
+    if (invite) invites.markUsed(db, invite.id, info.lastInsertRowid);
+    return findById(db, info.lastInsertRowid);
+  });
+
+  return create();
 }
 
 /** ตรวจ username/password คืน user ถ้าถูกต้อง ไม่ถูกคืน null */

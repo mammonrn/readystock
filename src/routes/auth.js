@@ -75,6 +75,7 @@ function authRoutes(db, config) {
       title: 'สมัครสมาชิก',
       error: null,
       username: '',
+      inviteCode: '',
       isFirstUser: users.countUsers(db) === 0,
     });
   });
@@ -86,7 +87,6 @@ function authRoutes(db, config) {
         username,
         password: req.body.password,
         inviteCode: req.body.inviteCode,
-        expectedInviteCode: config.inviteCode,
       });
       req.session.regenerate((err) => {
         if (err) throw err;
@@ -106,6 +106,7 @@ function authRoutes(db, config) {
         title: 'สมัครสมาชิก',
         error: err.message,
         username,
+        inviteCode: String(req.body.inviteCode || '').trim(),
         isFirstUser: users.countUsers(db) === 0,
       });
     }

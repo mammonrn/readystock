@@ -7,6 +7,7 @@ const session = require('express-session');
 const users = require('./services/users');
 const { createSqliteStore } = require('./session-store');
 const { requireAuth, attachUser, csrf } = require('./middleware');
+const { thaiTime } = require('./format');
 const authRoutes = require('./routes/auth');
 const itemRoutes = require('./routes/items');
 const logRoutes = require('./routes/logs');
@@ -16,7 +17,6 @@ function resolveConfig(overrides = {}) {
   const isProd = process.env.NODE_ENV === 'production';
   return {
     sessionSecret: process.env.SESSION_SECRET || '',
-    inviteCode: process.env.INVITE_CODE || '',
     sessionName: 'readystock.sid',
     cookieSecure: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === 'true' : isProd,
     pageSize: Number(process.env.PAGE_SIZE) || 50,
@@ -44,6 +44,7 @@ function createApp({ db, config: configOverrides } = {}) {
   app.set('views', path.join(__dirname, 'views'));
   app.disable('x-powered-by');
   app.locals.appName = 'ReadyStock';
+  app.locals.thaiTime = thaiTime;
 
   app.use(express.urlencoded({ extended: false, limit: '256kb' }));
   app.use('/static', express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));

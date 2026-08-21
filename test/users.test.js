@@ -3,31 +3,28 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { freshDb, makeUser, TEST_CONFIG } = require('./helpers');
+const { freshDb, makeUser } = require('./helpers');
 const users = require('../src/services/users');
 
-test('สมัครสมาชิก: ต้องกรอกรหัสเชิญให้ถูกต้อง', () => {
+test('สมัครสมาชิก: ผู้ใช้คนแรกสมัครได้โดยไม่ต้องใช้รหัสเชิญ (ยังไม่มีใครสร้างรหัสให้ได้)', () => {
   const db = freshDb();
-  assert.throws(
-    () =>
-      users.register(db, {
-        username: 'somchai',
-        password: 'password123',
-        inviteCode: 'ผิด',
-        expectedInviteCode: TEST_CONFIG.inviteCode,
-      }),
-    /รหัสเชิญไม่ถูกต้อง/
-  );
-  assert.equal(users.countUsers(db), 0, 'ต้องไม่ถูกสร้างขึ้นเมื่อรหัสเชิญผิด');
+  const first = users.register(db, { username: 'boss', password: 'password123', inviteCode: '' });
+  assert.equal(first.role, 'admin');
   db.close();
 });
 
-test('สมัครสมาชิก: ระบบที่ยังไม่ตั้ง INVITE_CODE ต้องสมัครไม่ได้', () => {
+test('สมัครสมาชิก: คนที่สองต้องมีรหัสเชิญที่ใช้ได้', () => {
   const db = freshDb();
+  makeUser(db, 'boss');
   assert.throws(
-    () => users.register(db, { username: 'somchai', password: 'password123', inviteCode: '', expectedInviteCode: '' }),
-    /INVITE_CODE/
+    () => users.register(db, { username: 'staff', password: 'password123', inviteCode: 'NOTREAL1' }),
+    /รหัสเชิญไม่ถูกต้อง/
   );
+  assert.throws(
+    () => users.register(db, { username: 'staff', password: 'password123', inviteCode: '' }),
+    /กรุณากรอกรหัสเชิญ/
+  );
+  assert.equal(users.countUsers(db), 1, 'ต้องไม่ถูกสร้างขึ้นเมื่อรหัสเชิญใช้ไม่ได้');
   db.close();
 });
 

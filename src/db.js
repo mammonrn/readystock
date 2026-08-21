@@ -56,6 +56,18 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 
 CREATE INDEX IF NOT EXISTS idx_logs_created ON activity_logs(created_at DESC);
 
+CREATE TABLE IF NOT EXISTS invite_codes (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  code       TEXT NOT NULL UNIQUE,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  used_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  used_at    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_invite_codes_code ON invite_codes(code);
+
 CREATE TABLE IF NOT EXISTS sessions (
   sid        TEXT PRIMARY KEY,
   data       TEXT NOT NULL,

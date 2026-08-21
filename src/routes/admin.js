@@ -3,6 +3,7 @@
 const express = require('express');
 const taxonomy = require('../services/taxonomy');
 const users = require('../services/users');
+const invites = require('../services/invites');
 const { requireAdmin, setFlash } = require('../middleware');
 
 function adminRoutes(db) {
@@ -15,7 +16,23 @@ function adminRoutes(db) {
       offices: taxonomy.list(db, 'offices'),
       categories: taxonomy.list(db, 'categories'),
       userList: users.listUsers(db),
+      inviteCodes: invites.listCodes(db),
+      activeInviteCount: invites.countActive(db),
+      inviteTtlHours: invites.DEFAULT_TTL_HOURS,
+      maxInvitePerBatch: invites.MAX_PER_BATCH,
     });
+  });
+
+  // ---------- รหัสเชิญ ----------
+  router.post('/admin/invites/create', (req, res) => {
+    try {
+      const created = invites.createCodes(db, { count: Number(req.body.count), createdBy: req.session.userId });
+      setFlash(req, 'success', `สร้างรหัสเชิญใหม่ ${created.length} รหัสเรียบร้อยแล้ว (หมดอายุใน ${invites.DEFAULT_TTL_HOURS} ชั่วโมง)`);
+    } catch (err) {
+      if (!err.expected) throw err;
+      setFlash(req, 'error', err.message);
+    }
+    res.redirect('/admin');
   });
 
   // ---------- สำนักงาน / หมวดหมู่ ----------

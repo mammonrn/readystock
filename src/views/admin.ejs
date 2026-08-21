@@ -56,6 +56,66 @@
 </div>
 
 <div class="card">
+  <div class="card-head">
+    <h2>รหัสเชิญ</h2>
+    <span class="muted small">
+      รหัสหนึ่งรหัสใช้สมัครได้ครั้งเดียว หมดอายุใน <%= inviteTtlHours %> ชั่วโมง ·
+      ใช้ได้อยู่ตอนนี้ <strong><%= activeInviteCount.toLocaleString('th-TH') %></strong> รหัส
+    </span>
+  </div>
+
+  <form method="post" action="/admin/invites/create" class="row-form invite-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <label for="inviteCount" class="inline-label">จำนวนรหัสที่ต้องการ</label>
+    <input id="inviteCount" name="count" type="number" min="1" max="<%= maxInvitePerBatch %>" value="1" required>
+    <button class="btn btn-primary btn-sm" type="submit">สร้างรหัสเชิญ</button>
+  </form>
+
+  <table class="table table-compact">
+    <thead>
+      <tr>
+        <th class="col-code">รหัส</th>
+        <th>สถานะ</th>
+        <th>หมดอายุ</th>
+        <th>สร้างโดย</th>
+        <th class="col-action">คัดลอก</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (inviteCodes.length === 0) { %>
+        <tr><td colspan="5" class="empty-row">ยังไม่มีรหัสเชิญ กดปุ่ม "สร้างรหัสเชิญ" ด้านบนเพื่อสร้าง</td></tr>
+      <% } %>
+      <% inviteCodes.forEach(function (invite) { %>
+        <tr class="<%= invite.status === 'active' ? '' : 'row-dim' %>">
+          <td class="col-code"><code class="invite-code"><%= invite.code %></code></td>
+          <td>
+            <% if (invite.status === 'active') { %>
+              <span class="tag tag-success">ยังไม่ใช้</span>
+            <% } else if (invite.status === 'used') { %>
+              <span class="tag tag-info">ใช้แล้ว</span>
+              <span class="muted xsmall">
+                โดย <%= invite.used_by_name || 'ผู้ใช้ที่ถูกลบ' %> เมื่อ <%= thaiTime(invite.used_at) %>
+              </span>
+            <% } else { %>
+              <span class="tag tag-muted">หมดอายุแล้ว</span>
+            <% } %>
+          </td>
+          <td class="col-time"><%= thaiTime(invite.expires_at) %></td>
+          <td class="muted xsmall"><%= invite.created_by_name || '-' %></td>
+          <td class="col-action">
+            <% if (invite.status === 'active') { %>
+              <button type="button" class="btn btn-sm btn-secondary" data-copy="<%= invite.code %>">คัดลอก</button>
+            <% } else { %>
+              <span class="muted xsmall">—</span>
+            <% } %>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
   <h2>ผู้ใช้งาน</h2>
   <table class="table">
     <thead>
