@@ -2,7 +2,7 @@
 
 const { AppError } = require('../errors');
 const { addLog } = require('./logs');
-const { formatItemCode, nextSequence } = require('../codes');
+const { formatItemCode, allocateSequence } = require('../codes');
 
 const SELECT_ITEM = `
   SELECT i.*,
@@ -116,10 +116,13 @@ function normalize(db, input) {
 /**
  * เพิ่มสินค้าใหม่พร้อมออกรหัสสินค้าอัตโนมัติ เช่น TLP0001
  *
- * ทั้งการหาเลขลำดับถัดไปและการ INSERT อยู่ใน transaction แบบ IMMEDIATE เดียวกัน
+ * เลขลำดับมาจากตัวนับในตาราง prefix_counters (แยกตาม prefix) ซึ่งเดินหน้าอย่างเดียว
+ * ไม่ได้คำนวณจากรหัสสูงสุดที่มีอยู่ ลบสินค้าแล้วเลขนั้นจึงไม่ถูกนำกลับมาใช้ซ้ำ
+ *
+ * ทั้งการจองเลขและการ INSERT อยู่ใน transaction แบบ IMMEDIATE เดียวกัน
  * (better-sqlite3 ทำงานแบบ synchronous จึงไม่มีการสลับกันกลาง transaction ในโปรเซสเดียว
  *  ส่วน IMMEDIATE จะจับ write lock ตั้งแต่ต้น กันกรณีมีหลายโปรเซส/หลาย connection เขียนพร้อมกัน)
- * และยังมี UNIQUE index บน items.item_code เป็นด่านสุดท้าย ถ้าชนจริงจะขยับไปเลขถัดไปแล้วลองใหม่
+ * และยังมี UNIQUE index บน items.item_code เป็นด่านสุดท้าย ถ้าชนจริงจะจองเลขใหม่แล้วลองอีกครั้ง
  */
 function createItem(db, input, userId) {
   const v = normalize(db, input);
@@ -131,11 +134,11 @@ function createItem(db, input, userId) {
   );
 
   const run = db.transaction(() => {
-    let sequence = nextSequence(db, prefix);
-    for (let attempt = 0; attempt < 50; attempt += 1, sequence += 1) {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const itemCode = formatItemCode(prefix, allocateSequence(db, prefix));
       try {
         const info = insert.run(
-          formatItemCode(prefix, sequence),
+          itemCode,
           v.name,
           v.categoryId,
           v.officeId,
@@ -146,7 +149,7 @@ function createItem(db, input, userId) {
         );
         return getItem(db, info.lastInsertRowid);
       } catch (err) {
-        // รหัสถูกใช้ไปแล้ว (เช่นอีกโปรเซสเพิ่งแทรกเข้ามา) ให้ขยับไปเลขถัดไป
+        // รหัสนี้ถูกใช้ไปแล้ว (เช่นข้อมูลเก่าที่ออกรหัสไว้ก่อนมีตัวนับ) ให้จองเลขถัดไปแล้วลองใหม่
         if (!String(err.message).includes('UNIQUE') || !String(err.message).includes('item_code')) throw err;
       }
     }

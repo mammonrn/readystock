@@ -64,17 +64,40 @@ function formatItemCode(prefix, sequence) {
 }
 
 /**
- * หาเลขลำดับถัดไปของ prefix นั้น (นับแยกอิสระต่อหมวดหมู่)
+ * จองเลขลำดับถัดไปของ prefix นั้น (นับแยกอิสระต่อ prefix)
  *
- * นับจาก item_code ที่ขึ้นต้นด้วย prefix นี้และตามด้วยตัวเลข 4 หลักพอดี
- * จึงไม่ปนกับ prefix อื่นที่ขึ้นต้นเหมือนกัน (เช่น TLP กับ TLP2)
- * และรหัสของสินค้าที่ถูกย้ายหมวดหมู่ไปแล้วก็ยังถูกนับ ทำให้เลขไม่ถูกใช้ซ้ำ
+ * ตัวนับเก็บอยู่ในตาราง prefix_counters แยกตาม prefix โดยตรง ไม่ได้ผูกกับ category_id
+ * จึงกันรหัสชนกันได้แม้หมวดหมู่คนละอันจะเคยใช้ prefix เดียวกันคนละช่วงเวลา
+ * และเป็นตัวนับที่เดินหน้าอย่างเดียว ลบสินค้าแล้วเลขนั้นจะไม่ถูกนำกลับมาใช้ซ้ำ
+ *
+ * ต้องเรียกอยู่ใน transaction เดียวกับตอน INSERT สินค้า เพื่อให้การจองเลขกับการบันทึกเป็นหน่วยเดียวกัน
+ * @returns {number} เลขลำดับที่จองได้ (เริ่มที่ 1 สำหรับ prefix ที่ยังไม่เคยถูกใช้)
  */
-function nextSequence(db, prefix) {
+function allocateSequence(db, prefix) {
   const row = db
-    .prepare('SELECT MAX(CAST(SUBSTR(item_code, ?) AS INTEGER)) AS n FROM items WHERE item_code GLOB ?')
-    .get(prefix.length + 1, prefix + '[0-9]'.repeat(CODE_DIGITS));
-  return (row.n || 0) + 1;
+    .prepare(
+      `INSERT INTO prefix_counters (prefix, last_number) VALUES (?, 1)
+       ON CONFLICT(prefix) DO UPDATE SET last_number = last_number + 1, updated_at = datetime('now')
+       RETURNING last_number`
+    )
+    .get(prefix);
+  return row.last_number;
+}
+
+/** ดันตัวนับของ prefix ขึ้นไปอย่างน้อยเท่ากับค่าที่ระบุ (ไม่ลดค่าลง) */
+function bumpCounter(db, prefix, value) {
+  if (!prefix || !Number.isInteger(value) || value <= 0) return;
+  db.prepare(
+    `INSERT INTO prefix_counters (prefix, last_number) VALUES (?, ?)
+     ON CONFLICT(prefix) DO UPDATE SET last_number = MAX(last_number, excluded.last_number),
+                                       updated_at = datetime('now')`
+  ).run(prefix, value);
+}
+
+/** ค่าปัจจุบันของตัวนับ (ไว้ดู/ทดสอบ) */
+function currentCounter(db, prefix) {
+  const row = db.prepare('SELECT last_number FROM prefix_counters WHERE prefix = ?').get(prefix);
+  return row ? row.last_number : 0;
 }
 
 module.exports = {
@@ -82,7 +105,9 @@ module.exports = {
   normalizePrefix,
   uniquePrefix,
   formatItemCode,
-  nextSequence,
+  allocateSequence,
+  bumpCounter,
+  currentCounter,
   THAI_CONSONANTS,
   PREFIX_MAX_LENGTH,
   PREFIX_MIN_LENGTH,
