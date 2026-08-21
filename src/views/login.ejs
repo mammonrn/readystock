@@ -1,0 +1,23 @@
+<%- include('partials/header') %>
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <h1>เข้าสู่ระบบ</h1>
+    <p class="muted">ระบบคลังสินค้าสำนักงาน ReadyStock</p>
+
+    <% if (error) { %><div class="flash flash-error"><%= error %></div><% } %>
+
+    <form method="post" action="/login" autocomplete="on">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="next" value="<%= next %>">
+      <label for="username">ชื่อผู้ใช้</label>
+      <input id="username" name="username" value="<%= username %>" required autofocus autocomplete="username">
+
+      <label for="password">รหัสผ่าน</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+
+      <button class="btn btn-primary btn-block" type="submit">เข้าสู่ระบบ</button>
+    </form>
+    <p class="muted small">ยังไม่มีบัญชี? <a href="/register">สมัครสมาชิกด้วยรหัสเชิญ</a></p>
+  </div>
+</div>
+<%- include('partials/footer') %>

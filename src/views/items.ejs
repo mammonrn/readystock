@@ -1,0 +1,144 @@
+<%- include('partials/header') %>
+
+<div class="page-head">
+  <h1>รายการสินค้า</h1>
+  <div class="page-actions">
+    <a class="btn btn-secondary" href="/items/export.xlsx<%= filterQuery({}) %>">⬇ Export Excel</a>
+    <a class="btn btn-primary" href="/items/new<%= filterQuery({}) %>">+ เพิ่มสินค้า</a>
+  </div>
+</div>
+
+<form class="card filter-bar" method="get" action="/items">
+  <div class="field">
+    <label for="q">ค้นหาชื่อสินค้า</label>
+    <input id="q" name="q" value="<%= filter.q %>" placeholder="พิมพ์ชื่อสินค้า...">
+  </div>
+  <div class="field">
+    <label for="office">สำนักงาน</label>
+    <select id="office" name="office">
+      <option value="">ทั้งหมด</option>
+      <% offices.forEach(function (o) { %>
+        <option value="<%= o.id %>" <%= filter.officeId === o.id ? 'selected' : '' %>><%= o.name %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="field">
+    <label for="category">หมวดหมู่</label>
+    <select id="category" name="category">
+      <option value="">ทั้งหมด</option>
+      <% categories.forEach(function (c) { %>
+        <option value="<%= c.id %>" <%= filter.categoryId === c.id ? 'selected' : '' %>><%= c.name %></option>
+      <% }); %>
+    </select>
+  </div>
+  <div class="field field-check">
+    <label class="checkbox">
+      <input type="checkbox" name="empty" value="1" <%= filter.onlyEmpty ? 'checked' : '' %>>
+      เฉพาะที่หมด
+    </label>
+  </div>
+  <div class="field field-actions">
+    <button class="btn btn-primary" type="submit">ค้นหา</button>
+    <a class="btn btn-ghost" href="/items">ล้างตัวกรอง</a>
+  </div>
+</form>
+
+<div class="summary">
+  <div class="summary-item">
+    <span class="summary-label">รายการที่พบ</span>
+    <span class="summary-value"><%= result.total.toLocaleString('th-TH') %></span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-label">จำนวนรวม</span>
+    <span class="summary-value"><%= result.totalQuantity.toLocaleString('th-TH') %></span>
+  </div>
+  <div class="summary-item <%= result.outOfStock > 0 ? 'danger' : '' %>">
+    <span class="summary-label">สินค้าหมด</span>
+    <span class="summary-value"><%= result.outOfStock.toLocaleString('th-TH') %></span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-label">หน้า</span>
+    <span class="summary-value"><%= result.page %> / <%= result.pages %></span>
+  </div>
+</div>
+
+<div class="card table-card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th class="col-name">ชื่อสินค้า</th>
+        <th>หมวดหมู่</th>
+        <th>สำนักงาน</th>
+        <th class="num">จำนวน</th>
+        <th>หน่วย</th>
+        <th class="col-note">หมายเหตุ</th>
+        <th>แก้ไขล่าสุดโดย</th>
+        <th class="col-action">จัดการ</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (result.rows.length === 0) { %>
+        <tr><td colspan="8" class="empty-row">ไม่พบสินค้าตามเงื่อนไขที่เลือก</td></tr>
+      <% } %>
+      <% result.rows.forEach(function (item) { %>
+        <tr class="<%= item.quantity === 0 ? 'row-empty' : '' %>">
+          <td class="col-name"><%= item.name %></td>
+          <td><%= item.category_name %></td>
+          <td><%= item.office_name %></td>
+          <td class="num">
+            <% if (item.quantity === 0) { %>
+              <span class="tag tag-danger">หมด</span>
+            <% } else { %>
+              <%= item.quantity.toLocaleString('th-TH') %>
+            <% } %>
+          </td>
+          <td><%= item.unit %></td>
+          <td class="col-note" title="<%= item.note %>"><%= item.note %></td>
+          <td>
+            <%= item.updated_by_name %>
+            <div class="muted xsmall"><%= item.updated_at %></div>
+          </td>
+          <td class="col-action">
+            <a class="btn btn-sm btn-secondary" href="/items/<%= item.id %>/edit<%= filterQuery({ page: result.page }) %>">แก้ไข</a>
+            <form method="post" action="/items/<%= item.id %>/delete" class="inline"
+                  data-confirm="ยืนยันการลบสินค้า &quot;<%= item.name %>&quot; ?&#10;การลบไม่สามารถย้อนกลับได้">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="hidden" name="backUrl" value="/items<%= filterQuery({ page: result.page }) %>">
+              <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+            </form>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<% if (result.pages > 1) { %>
+  <nav class="pager">
+    <a class="btn btn-ghost btn-sm <%= result.page <= 1 ? 'disabled' : '' %>"
+       href="/items<%= filterQuery({ page: Math.max(1, result.page - 1) }) %>">← ก่อนหน้า</a>
+
+    <% 
+      var windowSize = 2;
+      var start = Math.max(1, result.page - windowSize);
+      var end = Math.min(result.pages, result.page + windowSize);
+    %>
+    <% if (start > 1) { %>
+      <a class="btn btn-ghost btn-sm" href="/items<%= filterQuery({ page: 1 }) %>">1</a>
+      <% if (start > 2) { %><span class="pager-gap">…</span><% } %>
+    <% } %>
+    <% for (var p = start; p <= end; p++) { %>
+      <a class="btn btn-sm <%= p === result.page ? 'btn-primary' : 'btn-ghost' %>"
+         href="/items<%= filterQuery({ page: p }) %>"><%= p %></a>
+    <% } %>
+    <% if (end < result.pages) { %>
+      <% if (end < result.pages - 1) { %><span class="pager-gap">…</span><% } %>
+      <a class="btn btn-ghost btn-sm" href="/items<%= filterQuery({ page: result.pages }) %>"><%= result.pages %></a>
+    <% } %>
+
+    <a class="btn btn-ghost btn-sm <%= result.page >= result.pages ? 'disabled' : '' %>"
+       href="/items<%= filterQuery({ page: Math.min(result.pages, result.page + 1) }) %>">ถัดไป →</a>
+  </nav>
+<% } %>
+
+<%- include('partials/footer') %>

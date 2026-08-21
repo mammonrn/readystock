@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> · <%= appName %></title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📦</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/items">📦 <span><%= appName %></span></a>
+    <% if (currentUser) { %>
+      <nav class="nav">
+        <a href="/items" class="<%= activePath.startsWith('/items') ? 'active' : '' %>">รายการสินค้า</a>
+        <a href="/logs" class="<%= activePath.startsWith('/logs') ? 'active' : '' %>">ประวัติการใช้งาน</a>
+        <% if (currentUser.role === 'admin') { %>
+          <a href="/admin" class="<%= activePath.startsWith('/admin') ? 'active' : '' %>">จัดการระบบ</a>
+        <% } %>
+      </nav>
+      <div class="user-box">
+        <span class="username"><%= currentUser.username %></span>
+        <span class="badge <%= currentUser.role %>"><%= currentUser.role %></span>
+        <form method="post" action="/logout" class="inline">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" class="btn btn-ghost btn-sm">ออกจากระบบ</button>
+        </form>
+      </div>
+    <% } %>
+  </div>
+</header>
+<main class="container">
+  <% if (typeof flash !== 'undefined' && flash) { %>
+    <div class="flash flash-<%= flash.type %>"><%= flash.message %></div>
+  <% } %>

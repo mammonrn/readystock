@@ -1,0 +1,64 @@
+<%- include('partials/header') %>
+
+<div class="page-head">
+  <h1><%= isEdit ? 'แก้ไขสินค้า' : 'เพิ่มสินค้า' %></h1>
+  <a class="btn btn-ghost" href="<%= backUrl %>">← กลับ</a>
+</div>
+
+<% if (error) { %><div class="flash flash-error"><%= error %></div><% } %>
+
+<div class="card form-card">
+  <form method="post" action="<%= isEdit ? '/items/' + item.id + '/edit' : '/items/new' %>">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="backUrl" value="<%= backUrl %>">
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="name">ชื่อสินค้า *</label>
+        <input id="name" name="name" value="<%= item.name %>" required maxlength="120" autofocus>
+      </div>
+
+      <div class="field">
+        <label for="categoryId">หมวดหมู่ *</label>
+        <select id="categoryId" name="categoryId" required>
+          <option value="">— เลือกหมวดหมู่ —</option>
+          <% categories.forEach(function (c) { %>
+            <option value="<%= c.id %>" <%= Number(item.category_id) === c.id ? 'selected' : '' %>><%= c.name %></option>
+          <% }); %>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="officeId">สำนักงาน *</label>
+        <select id="officeId" name="officeId" required>
+          <option value="">— เลือกสำนักงาน —</option>
+          <% offices.forEach(function (o) { %>
+            <option value="<%= o.id %>" <%= Number(item.office_id) === o.id ? 'selected' : '' %>><%= o.name %></option>
+          <% }); %>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="quantity">จำนวน *</label>
+        <input id="quantity" name="quantity" type="number" min="0" step="1" value="<%= item.quantity %>" required>
+      </div>
+
+      <div class="field">
+        <label for="unit">หน่วย</label>
+        <input id="unit" name="unit" value="<%= item.unit %>" maxlength="32" placeholder="เช่น เครื่อง, ชิ้น, กล่อง">
+      </div>
+
+      <div class="field field-wide">
+        <label for="note">หมายเหตุ</label>
+        <textarea id="note" name="note" rows="3" maxlength="500" placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"><%= item.note %></textarea>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit"><%= isEdit ? 'บันทึกการแก้ไข' : 'เพิ่มสินค้า' %></button>
+      <a class="btn btn-ghost" href="<%= backUrl %>">ยกเลิก</a>
+    </div>
+  </form>
+</div>
+
+<%- include('partials/footer') %>

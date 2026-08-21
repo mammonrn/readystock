@@ -1,0 +1,110 @@
+<%- include('partials/header') %>
+
+<div class="page-head">
+  <h1>จัดการระบบ</h1>
+  <span class="muted">สำหรับผู้ดูแลระบบเท่านั้น</span>
+</div>
+
+<div class="admin-grid">
+  <% var sections = [
+       { kind: 'offices',    label: 'สำนักงาน', rows: offices },
+       { kind: 'categories', label: 'หมวดหมู่',  rows: categories }
+     ]; %>
+
+  <% sections.forEach(function (section) { %>
+    <div class="card">
+      <h2><%= section.label %></h2>
+
+      <form method="post" action="/admin/<%= section.kind %>/create" class="row-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input name="name" placeholder="ชื่อ<%= section.label %>ใหม่" required maxlength="64">
+        <button class="btn btn-primary btn-sm" type="submit">เพิ่ม</button>
+      </form>
+
+      <table class="table table-compact">
+        <thead>
+          <tr><th>ชื่อ</th><th class="num">สินค้า</th><th class="col-action">จัดการ</th></tr>
+        </thead>
+        <tbody>
+          <% section.rows.forEach(function (row) { %>
+            <tr>
+              <td>
+                <form method="post" action="/admin/<%= section.kind %>/<%= row.id %>/rename" class="row-form">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <input name="name" value="<%= row.name %>" required maxlength="64">
+                  <button class="btn btn-sm btn-secondary" type="submit">บันทึกชื่อ</button>
+                </form>
+              </td>
+              <td class="num"><%= row.item_count.toLocaleString('th-TH') %></td>
+              <td class="col-action">
+                <% if (row.item_count > 0) { %>
+                  <span class="muted xsmall" title="ต้องย้ายหรือลบสินค้าออกก่อน">ลบไม่ได้ (มีสินค้าใช้อยู่)</span>
+                <% } else { %>
+                  <form method="post" action="/admin/<%= section.kind %>/<%= row.id %>/delete" class="inline"
+                        data-confirm="ยืนยันการลบ<%= section.label %> &quot;<%= row.name %>&quot; ?">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% }); %>
+</div>
+
+<div class="card">
+  <h2>ผู้ใช้งาน</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ชื่อผู้ใช้</th>
+        <th>สิทธิ์</th>
+        <th>สมัครเมื่อ</th>
+        <th>ตั้งรหัสผ่านใหม่</th>
+        <th class="col-action">จัดการ</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% userList.forEach(function (u) { %>
+        <tr>
+          <td>
+            <%= u.username %>
+            <% if (u.id === currentUser.id) { %><span class="muted xsmall">(คุณ)</span><% } %>
+          </td>
+          <td><span class="badge <%= u.role %>"><%= u.role %></span></td>
+          <td class="muted xsmall"><%= u.created_at %></td>
+          <td>
+            <form method="post" action="/admin/users/<%= u.id %>/reset-password" class="row-form"
+                  data-confirm="ยืนยันตั้งรหัสผ่านใหม่ให้ <%= u.username %> ?">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input name="password" type="text" minlength="6" required placeholder="รหัสผ่านใหม่ (6 ตัวขึ้นไป)">
+              <button class="btn btn-sm btn-secondary" type="submit">ตั้งรหัสใหม่</button>
+            </form>
+          </td>
+          <td class="col-action">
+            <form method="post" action="/admin/users/<%= u.id %>/role" class="row-form">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <select name="role">
+                <option value="user" <%= u.role === 'user' ? 'selected' : '' %>>user</option>
+                <option value="admin" <%= u.role === 'admin' ? 'selected' : '' %>>admin</option>
+              </select>
+              <button class="btn btn-sm btn-secondary" type="submit">เปลี่ยนสิทธิ์</button>
+            </form>
+            <% if (u.id !== currentUser.id) { %>
+              <form method="post" action="/admin/users/<%= u.id %>/delete" class="inline"
+                    data-confirm="ยืนยันการลบผู้ใช้ <%= u.username %> ?&#10;การลบไม่สามารถย้อนกลับได้">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn btn-sm btn-danger" type="submit">ลบผู้ใช้</button>
+              </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('partials/footer') %>

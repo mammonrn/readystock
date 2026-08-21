@@ -1,0 +1,23 @@
+{
+  "name": "readystock",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ReadyStock - ระบบคลังสินค้าสำนักงาน",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.5.0",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.1",
+    "express-session": "^1.18.1"
+  }
+}
