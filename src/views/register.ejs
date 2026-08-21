@@ -1,0 +1,31 @@
+<%- include('partials/header') %>
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <h1>สมัครสมาชิก</h1>
+    <% if (isFirstUser) { %>
+      <div class="flash flash-info">คุณเป็นผู้ใช้คนแรกของระบบ บัญชีนี้จะได้สิทธิ์ผู้ดูแลระบบ (admin) โดยอัตโนมัติ</div>
+    <% } else { %>
+      <p class="muted">ต้องใช้รหัสเชิญจากผู้ดูแลระบบจึงจะสมัครได้</p>
+    <% } %>
+
+    <% if (error) { %><div class="flash flash-error"><%= error %></div><% } %>
+
+    <form method="post" action="/register">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label for="username">ชื่อผู้ใช้</label>
+      <input id="username" name="username" value="<%= username %>" required autofocus autocomplete="username"
+             minlength="3" maxlength="32" pattern="[A-Za-z0-9._\-]+"
+             title="ใช้ได้เฉพาะ a-z, 0-9, จุด, ขีดกลาง และขีดล่าง">
+
+      <label for="password">รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)</label>
+      <input id="password" name="password" type="password" required minlength="6" autocomplete="new-password">
+
+      <label for="inviteCode">รหัสเชิญ</label>
+      <input id="inviteCode" name="inviteCode" required autocomplete="off">
+
+      <button class="btn btn-primary btn-block" type="submit">สมัครสมาชิก</button>
+    </form>
+    <p class="muted small">มีบัญชีแล้ว? <a href="/login">เข้าสู่ระบบ</a></p>
+  </div>
+</div>
+<%- include('partials/footer') %>

@@ -1,0 +1,48 @@
+<%- include('partials/header') %>
+
+<div class="page-head">
+  <h1>ประวัติการใช้งาน</h1>
+  <span class="muted">ทั้งหมด <%= result.total.toLocaleString('th-TH') %> รายการ</span>
+</div>
+
+<div class="card table-card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th class="col-time">เวลา</th>
+        <th>ผู้ใช้</th>
+        <th>การกระทำ</th>
+        <th>สินค้า</th>
+        <th class="col-detail">รายละเอียด</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (result.rows.length === 0) { %>
+        <tr><td colspan="5" class="empty-row">ยังไม่มีประวัติการใช้งาน</td></tr>
+      <% } %>
+      <% result.rows.forEach(function (log) { %>
+        <tr>
+          <td class="col-time"><%= log.created_at %></td>
+          <td><%= log.username %></td>
+          <td>
+            <% if (log.action === 'create') { %><span class="tag tag-success">เพิ่ม</span>
+            <% } else if (log.action === 'update') { %><span class="tag tag-info">แก้ไข</span>
+            <% } else { %><span class="tag tag-danger">ลบ</span><% } %>
+          </td>
+          <td><%= log.item_name %></td>
+          <td class="col-detail"><%= log.detail %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<% if (result.pages > 1) { %>
+  <nav class="pager">
+    <a class="btn btn-ghost btn-sm <%= result.page <= 1 ? 'disabled' : '' %>" href="/logs?page=<%= Math.max(1, result.page - 1) %>">← ก่อนหน้า</a>
+    <span class="pager-gap">หน้า <%= result.page %> / <%= result.pages %></span>
+    <a class="btn btn-ghost btn-sm <%= result.page >= result.pages ? 'disabled' : '' %>" href="/logs?page=<%= Math.min(result.pages, result.page + 1) %>">ถัดไป →</a>
+  </nav>
+<% } %>
+
+<%- include('partials/footer') %>
