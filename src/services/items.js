@@ -2,6 +2,7 @@
 
 const { AppError } = require('../errors');
 const { addLog } = require('./logs');
+const { formatItemCode, nextSequence } = require('../codes');
 
 const SELECT_ITEM = `
   SELECT i.*,
@@ -20,8 +21,10 @@ function buildFilter({ q, officeId, categoryId, onlyEmpty } = {}) {
 
   const keyword = String(q || '').trim();
   if (keyword) {
-    where.push('i.name LIKE ? ESCAPE \'\\\'');
-    params.push('%' + keyword.replace(/[\\%_]/g, (m) => '\\' + m) + '%');
+    // ค้นหาได้ทั้งชื่อสินค้าและรหัสสินค้า (LIKE ไม่สนตัวพิมพ์เล็ก-ใหญ่สำหรับตัวอักษร ASCII)
+    const pattern = '%' + keyword.replace(/[\\%_]/g, (m) => '\\' + m) + '%';
+    where.push("(i.name LIKE ? ESCAPE '\\' OR i.item_code LIKE ? ESCAPE '\\')");
+    params.push(pattern, pattern);
   }
   if (officeId) {
     where.push('i.office_id = ?');
@@ -110,21 +113,52 @@ function normalize(db, input) {
   };
 }
 
+/**
+ * เพิ่มสินค้าใหม่พร้อมออกรหัสสินค้าอัตโนมัติ เช่น TLP0001
+ *
+ * ทั้งการหาเลขลำดับถัดไปและการ INSERT อยู่ใน transaction แบบ IMMEDIATE เดียวกัน
+ * (better-sqlite3 ทำงานแบบ synchronous จึงไม่มีการสลับกันกลาง transaction ในโปรเซสเดียว
+ *  ส่วน IMMEDIATE จะจับ write lock ตั้งแต่ต้น กันกรณีมีหลายโปรเซส/หลาย connection เขียนพร้อมกัน)
+ * และยังมี UNIQUE index บน items.item_code เป็นด่านสุดท้าย ถ้าชนจริงจะขยับไปเลขถัดไปแล้วลองใหม่
+ */
 function createItem(db, input, userId) {
   const v = normalize(db, input);
-  const info = db
-    .prepare(
-      `INSERT INTO items (name, category_id, office_id, quantity, unit, note, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(v.name, v.categoryId, v.officeId, v.quantity, v.unit, v.note, userId ?? null);
+  const { code_prefix: prefix } = db.prepare('SELECT code_prefix FROM categories WHERE id = ?').get(v.categoryId);
 
-  const item = getItem(db, info.lastInsertRowid);
+  const insert = db.prepare(
+    `INSERT INTO items (item_code, name, category_id, office_id, quantity, unit, note, updated_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+
+  const run = db.transaction(() => {
+    let sequence = nextSequence(db, prefix);
+    for (let attempt = 0; attempt < 50; attempt += 1, sequence += 1) {
+      try {
+        const info = insert.run(
+          formatItemCode(prefix, sequence),
+          v.name,
+          v.categoryId,
+          v.officeId,
+          v.quantity,
+          v.unit,
+          v.note,
+          userId ?? null
+        );
+        return getItem(db, info.lastInsertRowid);
+      } catch (err) {
+        // รหัสถูกใช้ไปแล้ว (เช่นอีกโปรเซสเพิ่งแทรกเข้ามา) ให้ขยับไปเลขถัดไป
+        if (!String(err.message).includes('UNIQUE') || !String(err.message).includes('item_code')) throw err;
+      }
+    }
+    throw new AppError('ออกรหัสสินค้าไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+  });
+
+  const item = run.immediate();
   addLog(db, {
     userId,
     action: 'create',
     itemName: item.name,
-    detail: `เพิ่มสินค้าใหม่ที่ ${item.office_name} (${item.category_name}) จำนวน ${item.quantity} ${item.unit || ''}`.trim(),
+    detail: `เพิ่มสินค้าใหม่ รหัส ${item.item_code} ที่ ${item.office_name} (${item.category_name}) จำนวน ${item.quantity} ${item.unit || ''}`.trim(),
   });
   return item;
 }
@@ -140,6 +174,7 @@ function describeChanges(before, after) {
   return changes;
 }
 
+/** แก้ไขสินค้า — item_code เดิมคงเดิมเสมอ แม้จะย้ายไปหมวดหมู่อื่น */
 function updateItem(db, id, input, userId) {
   const before = getItem(db, id);
   if (!before) throw new AppError('ไม่พบสินค้าที่ต้องการแก้ไข');
@@ -171,7 +206,7 @@ function deleteItem(db, id, userId) {
     userId,
     action: 'delete',
     itemName: item.name,
-    detail: `ลบสินค้าออกจาก ${item.office_name} (${item.category_name}) จำนวนคงเหลือ ${item.quantity} ${item.unit || ''}`.trim(),
+    detail: `ลบสินค้ารหัส ${item.item_code} ออกจาก ${item.office_name} (${item.category_name}) จำนวนคงเหลือ ${item.quantity} ${item.unit || ''}`.trim(),
   });
   return item;
 }

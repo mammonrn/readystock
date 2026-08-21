@@ -78,3 +78,62 @@ document.addEventListener('input', function (event) {
     el.setSelectionRange(start, start);
   }
 });
+
+// ---------- ลากสลับลำดับหมวดหมู่ในหน้าจัดการระบบ ----------
+(function () {
+  var table = document.querySelector('[data-sortable]');
+  if (!table) return;
+
+  var body = table.tBodies[0];
+  var orderField = document.getElementById('category-order');
+  var saveButton = document.getElementById('save-category-order');
+  var dragging = null;
+
+  function refresh() {
+    var rows = Array.prototype.slice.call(body.rows);
+    rows.forEach(function (row, index) {
+      var number = row.querySelector('.order-number');
+      if (number) number.textContent = String(index + 1);
+    });
+    var ids = rows.map(function (row) { return row.getAttribute('data-id'); });
+    var changed = ids.join(',') !== orderField.defaultValue;
+    orderField.value = ids.join(',');
+    if (saveButton) saveButton.hidden = !changed;
+  }
+
+  body.addEventListener('dragstart', function (event) {
+    var row = event.target.closest('tr');
+    if (!row) return;
+    dragging = row;
+    row.classList.add('dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    // Firefox ต้องมีการ setData ถึงจะเริ่มลากได้
+    event.dataTransfer.setData('text/plain', row.getAttribute('data-id'));
+  });
+
+  body.addEventListener('dragend', function () {
+    if (dragging) dragging.classList.remove('dragging');
+    dragging = null;
+    refresh();
+  });
+
+  body.addEventListener('dragover', function (event) {
+    if (!dragging) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+
+    var over = event.target.closest('tr');
+    if (!over || over === dragging || over.parentNode !== body) return;
+
+    var rows = Array.prototype.slice.call(body.rows);
+    var moveDown = rows.indexOf(dragging) < rows.indexOf(over);
+    body.insertBefore(dragging, moveDown ? over.nextSibling : over);
+  });
+
+  body.addEventListener('drop', function (event) {
+    event.preventDefault();
+    refresh();
+  });
+
+  refresh();
+})();

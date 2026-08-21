@@ -10,8 +10,8 @@
 
 <form class="card filter-bar" method="get" action="/items">
   <div class="field">
-    <label for="q">ค้นหาชื่อสินค้า</label>
-    <input id="q" name="q" value="<%= filter.q %>" placeholder="พิมพ์ชื่อสินค้า...">
+    <label for="q">ค้นหาชื่อหรือรหัสสินค้า</label>
+    <input id="q" name="q" value="<%= filter.q %>" placeholder="พิมพ์ชื่อสินค้าหรือรหัสสินค้า...">
   </div>
   <div class="field">
     <label for="office">สำนักงาน</label>
@@ -66,6 +66,7 @@
   <table class="table">
     <thead>
       <tr>
+        <th class="col-code">รหัส</th>
         <th class="col-name">ชื่อสินค้า</th>
         <th>หมวดหมู่</th>
         <th>สำนักงาน</th>
@@ -78,10 +79,11 @@
     </thead>
     <tbody>
       <% if (result.rows.length === 0) { %>
-        <tr><td colspan="8" class="empty-row">ไม่พบสินค้าตามเงื่อนไขที่เลือก</td></tr>
+        <tr><td colspan="9" class="empty-row">ไม่พบสินค้าตามเงื่อนไขที่เลือก</td></tr>
       <% } %>
       <% result.rows.forEach(function (item) { %>
         <tr class="<%= item.quantity === 0 ? 'row-empty' : '' %>">
+          <td class="col-code"><code class="item-code"><%= item.item_code %></code></td>
           <td class="col-name"><%= item.name %></td>
           <td><%= item.category_name %></td>
           <td><%= item.office_name %></td>

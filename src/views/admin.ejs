@@ -6,53 +6,131 @@
 </div>
 
 <div class="admin-grid">
-  <% var sections = [
-       { kind: 'offices',    label: 'สำนักงาน', rows: offices },
-       { kind: 'categories', label: 'หมวดหมู่',  rows: categories }
-     ]; %>
+  <div class="card">
+    <h2>สำนักงาน</h2>
 
-  <% sections.forEach(function (section) { %>
-    <div class="card">
-      <h2><%= section.label %></h2>
+    <form method="post" action="/admin/offices/create" class="row-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input name="name" placeholder="ชื่อสำนักงานใหม่" required maxlength="64">
+      <button class="btn btn-primary btn-sm" type="submit">เพิ่ม</button>
+    </form>
 
-      <form method="post" action="/admin/<%= section.kind %>/create" class="row-form">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <input name="name" placeholder="ชื่อ<%= section.label %>ใหม่" required maxlength="64">
-        <button class="btn btn-primary btn-sm" type="submit">เพิ่ม</button>
-      </form>
+    <table class="table table-compact">
+      <thead>
+        <tr><th>ชื่อ</th><th class="num">สินค้า</th><th class="col-action">จัดการ</th></tr>
+      </thead>
+      <tbody>
+        <% offices.forEach(function (row) { %>
+          <tr>
+            <td>
+              <form method="post" action="/admin/offices/<%= row.id %>/rename" class="row-form">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input name="name" value="<%= row.name %>" required maxlength="64">
+                <button class="btn btn-sm btn-secondary" type="submit">บันทึกชื่อ</button>
+              </form>
+            </td>
+            <td class="num"><%= row.item_count.toLocaleString('th-TH') %></td>
+            <td class="col-action">
+              <% if (row.item_count > 0) { %>
+                <span class="muted xsmall" title="ต้องย้ายหรือลบสินค้าออกก่อน">ลบไม่ได้ (มีสินค้าใช้อยู่)</span>
+              <% } else { %>
+                <form method="post" action="/admin/offices/<%= row.id %>/delete" class="inline"
+                      data-confirm="ยืนยันการลบสำนักงาน &quot;<%= row.name %>&quot; ?">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
+                </form>
+              <% } %>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
 
-      <table class="table table-compact">
+  <div class="card">
+    <div class="card-head">
+      <h2>หมวดหมู่</h2>
+      <span class="muted small">
+        ลากแถวเพื่อสลับลำดับ (หรือใช้ปุ่ม ↑ ↓) · ลำดับนี้มีผลกับดรอปดาวน์เลือกหมวดหมู่ทุกที่ ·
+        รหัสนำหน้าใช้ออกรหัสสินค้า เช่น TLP0001
+      </span>
+    </div>
+
+    <form method="post" action="/admin/categories/create" class="row-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input name="name" placeholder="ชื่อหมวดหมู่ใหม่" required maxlength="64">
+      <input name="codePrefix" placeholder="รหัสนำหน้า (เว้นว่างได้)" maxlength="8" class="code-input prefix-input">
+      <button class="btn btn-primary btn-sm" type="submit">เพิ่ม</button>
+    </form>
+
+    <form method="post" action="/admin/categories/reorder" id="category-order-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="order" id="category-order"
+             value="<%= categories.map(function (c) { return c.id; }).join(',') %>">
+      <table class="table table-compact" id="category-table" data-sortable>
         <thead>
-          <tr><th>ชื่อ</th><th class="num">สินค้า</th><th class="col-action">จัดการ</th></tr>
+          <tr>
+            <th class="col-drag" title="ลากเพื่อสลับลำดับ">ลำดับ</th>
+            <th>ชื่อ / รหัสนำหน้า</th>
+            <th class="num">สินค้า</th>
+            <th class="col-action">จัดการ</th>
+          </tr>
         </thead>
         <tbody>
-          <% section.rows.forEach(function (row) { %>
-            <tr>
+          <% categories.forEach(function (row, index) { %>
+            <tr draggable="true" data-id="<%= row.id %>">
+              <td class="col-drag">
+                <span class="drag-handle" title="ลากเพื่อสลับลำดับ">⠿</span>
+                <span class="order-number"><%= index + 1 %></span>
+              </td>
               <td>
-                <form method="post" action="/admin/<%= section.kind %>/<%= row.id %>/rename" class="row-form">
-                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                  <input name="name" value="<%= row.name %>" required maxlength="64">
-                  <button class="btn btn-sm btn-secondary" type="submit">บันทึกชื่อ</button>
-                </form>
+                <span class="row-form">
+                  <input form="category-<%= row.id %>-form" name="name" value="<%= row.name %>" required maxlength="64">
+                  <input form="category-<%= row.id %>-form" name="codePrefix" value="<%= row.code_prefix %>"
+                         maxlength="8" class="code-input prefix-input" title="รหัสนำหน้าสำหรับออกรหัสสินค้า">
+                  <button form="category-<%= row.id %>-form" class="btn btn-sm btn-secondary" type="submit">บันทึก</button>
+                </span>
               </td>
               <td class="num"><%= row.item_count.toLocaleString('th-TH') %></td>
               <td class="col-action">
+                <span class="move-buttons">
+                  <button form="category-<%= row.id %>-up" class="btn btn-sm btn-ghost" type="submit"
+                          title="เลื่อนขึ้น" <%= index === 0 ? 'disabled' : '' %>>↑</button>
+                  <button form="category-<%= row.id %>-down" class="btn btn-sm btn-ghost" type="submit"
+                          title="เลื่อนลง" <%= index === categories.length - 1 ? 'disabled' : '' %>>↓</button>
+                </span>
                 <% if (row.item_count > 0) { %>
-                  <span class="muted xsmall" title="ต้องย้ายหรือลบสินค้าออกก่อน">ลบไม่ได้ (มีสินค้าใช้อยู่)</span>
+                  <span class="muted xsmall" title="ต้องย้ายหรือลบสินค้าออกก่อน">ลบไม่ได้</span>
                 <% } else { %>
-                  <form method="post" action="/admin/<%= section.kind %>/<%= row.id %>/delete" class="inline"
-                        data-confirm="ยืนยันการลบ<%= section.label %> &quot;<%= row.name %>&quot; ?">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button class="btn btn-sm btn-danger" type="submit">ลบ</button>
-                  </form>
+                  <button form="category-<%= row.id %>-delete" class="btn btn-sm btn-danger" type="submit">ลบ</button>
                 <% } %>
               </td>
             </tr>
           <% }); %>
         </tbody>
       </table>
-    </div>
-  <% }); %>
+      <button class="btn btn-primary btn-sm" type="submit" id="save-category-order" hidden>บันทึกลำดับใหม่</button>
+    </form>
+
+    <%# ฟอร์มของแต่ละแถวต้องอยู่นอกตาราง เพราะ HTML ไม่อนุญาตให้ซ้อน form ในอีก form %>
+    <% categories.forEach(function (row) { %>
+      <form method="post" action="/admin/categories/<%= row.id %>/rename" id="category-<%= row.id %>-form" class="hidden-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      </form>
+      <form method="post" action="/admin/categories/<%= row.id %>/move" id="category-<%= row.id %>-up" class="hidden-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="direction" value="up">
+      </form>
+      <form method="post" action="/admin/categories/<%= row.id %>/move" id="category-<%= row.id %>-down" class="hidden-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="direction" value="down">
+      </form>
+      <form method="post" action="/admin/categories/<%= row.id %>/delete" id="category-<%= row.id %>-delete" class="hidden-form"
+            data-confirm="ยืนยันการลบหมวดหมู่ &quot;<%= row.name %>&quot; ?">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      </form>
+    <% }); %>
+  </div>
 </div>
 
 <div class="card">
