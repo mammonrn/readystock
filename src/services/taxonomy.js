@@ -1,6 +1,6 @@
 'use strict';
 
-const { AppError } = require('./users');
+const { AppError } = require('../errors');
 
 // ตาราง offices และ categories ใช้โครงสร้างเหมือนกัน จึงใช้ฟังก์ชันชุดเดียวกันได้
 const TABLES = {

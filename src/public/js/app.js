@@ -25,3 +25,56 @@ document.addEventListener('focusin', function (event) {
     el.select();
   }
 });
+
+// ปุ่มคัดลอกรหัสเชิญไปยังคลิปบอร์ด
+document.addEventListener('click', function (event) {
+  var button = event.target.closest ? event.target.closest('[data-copy]') : null;
+  if (!button) return;
+
+  var text = button.getAttribute('data-copy');
+  var original = button.textContent;
+
+  function done(ok) {
+    button.textContent = ok ? 'คัดลอกแล้ว ✓' : 'คัดลอกไม่สำเร็จ';
+    button.classList.toggle('btn-copied', ok);
+    window.setTimeout(function () {
+      button.textContent = original;
+      button.classList.remove('btn-copied');
+    }, 1500);
+  }
+
+  // navigator.clipboard ใช้ได้เฉพาะบน https หรือ localhost จึงต้องมีวิธีสำรองไว้ด้วย
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(fallbackCopy(text)); });
+  } else {
+    done(fallbackCopy(text));
+  }
+});
+
+function fallbackCopy(text) {
+  var area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  var ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch (err) {
+    ok = false;
+  }
+  document.body.removeChild(area);
+  return ok;
+}
+
+// พิมพ์รหัสเชิญเป็นตัวพิมพ์ใหญ่ให้อัตโนมัติ (ฝั่งเซิร์ฟเวอร์ก็แปลงให้อยู่แล้ว)
+document.addEventListener('input', function (event) {
+  var el = event.target;
+  if (el instanceof HTMLInputElement && el.classList.contains('code-input')) {
+    var start = el.selectionStart;
+    el.value = el.value.toUpperCase();
+    el.setSelectionRange(start, start);
+  }
+});

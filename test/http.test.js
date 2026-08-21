@@ -4,7 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const ExcelJS = require('exceljs');
 
-const { freshDb, makeUser, startServer, TEST_CONFIG } = require('./helpers');
+const { freshDb, makeUser, makeInvite, startServer } = require('./helpers');
+const invites = require('../src/services/invites');
 const items = require('../src/services/items');
 const taxonomy = require('../src/services/taxonomy');
 
@@ -39,20 +40,50 @@ test('ยังไม่ได้ login: เข้าหน้าอื่นต
   });
 });
 
-test('สมัครสมาชิกผ่านเว็บ: รหัสเชิญผิดไม่ผ่าน รหัสถูกผ่านและได้ admin', async () => {
+test('สมัครสมาชิกผ่านเว็บ: คนแรกสมัครได้เลยและได้สิทธิ์ admin', async () => {
   await withServer(async ({ client, db }) => {
-    const bad = await client.post('/register', { username: 'boss', password: 'password123', inviteCode: 'ผิด' });
-    assert.equal(bad.status, 400);
-    assert.match(await bad.text(), /รหัสเชิญไม่ถูกต้อง/);
+    const page = await (await client.request('/register')).text();
+    assert.match(page, /ไม่ต้องใช้รหัสเชิญ/, 'หน้าสมัครต้องบอกว่าคนแรกไม่ต้องใช้รหัสเชิญ');
 
-    const ok = await client.post('/register', {
-      username: 'boss',
-      password: 'password123',
-      inviteCode: TEST_CONFIG.inviteCode,
-    });
+    const ok = await client.post('/register', { username: 'boss', password: 'password123' });
     assert.equal(ok.status, 302);
     assert.equal(ok.headers.get('location'), '/items');
     assert.equal(db.prepare("SELECT role FROM users WHERE username = 'boss'").get().role, 'admin');
+  });
+});
+
+test('สมัครสมาชิกผ่านเว็บ: คนถัดไปต้องใช้รหัสเชิญที่ยังใช้ได้ และใช้ซ้ำไม่ได้', async () => {
+  await withServer(async ({ client, db }) => {
+    const admin = makeUser(db, 'boss');
+    const invite = makeInvite(db, admin.id);
+
+    const wrong = await client.post('/register', { username: 'staff', password: 'password123', inviteCode: 'ZZZZZZZZ' });
+    assert.equal(wrong.status, 400);
+    assert.match(await wrong.text(), /รหัสเชิญไม่ถูกต้อง/);
+
+    const ok = await client.post('/register', { username: 'staff', password: 'password123', inviteCode: invite.code });
+    assert.equal(ok.status, 302);
+    assert.equal(db.prepare("SELECT role FROM users WHERE username = 'staff'").get().role, 'user');
+
+    await client.post('/logout', {}, '/items');
+    const reuse = await client.post('/register', { username: 'staff2', password: 'password123', inviteCode: invite.code });
+    assert.equal(reuse.status, 400);
+    assert.match(await reuse.text(), /ถูกใช้ไปแล้ว/);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 2);
+  });
+});
+
+test('สมัครสมาชิกผ่านเว็บ: รหัสเชิญหมดอายุต้องขึ้นข้อความบอกว่าหมดอายุ', async () => {
+  await withServer(async ({ client, db }) => {
+    makeUser(db, 'boss');
+    const invite = makeInvite(db);
+    db.prepare("UPDATE invite_codes SET expires_at = datetime('now', '-1 hours') WHERE id = ?").run(invite.id);
+
+    const res = await client.post('/register', { username: 'staff', password: 'password123', inviteCode: invite.code });
+    assert.equal(res.status, 400);
+    const html = await res.text();
+    assert.match(html, /หมดอายุแล้ว/);
+    assert.match(html, /24 ชั่วโมง/);
   });
 });
 
@@ -276,5 +307,72 @@ test('หน้าที่ไม่มีอยู่ต้องคืน 404 
     const res = await client.request('/ไม่มีหน้านี้');
     assert.equal(res.status, 404);
     assert.match(await res.text(), /ไม่พบหน้าที่คุณเรียก/);
+  });
+});
+
+test('หน้า admin: สร้างรหัสเชิญทีละหลายรหัสและแสดงในตาราง', async () => {
+  await withServer(async ({ db, client }) => {
+    makeUser(db, 'boss');
+    await client.login('boss', 'password123');
+
+    const res = await client.post('/admin/invites/create', { count: '15' }, '/admin');
+    assert.equal(res.status, 302);
+
+    const rows = invites.listCodes(db);
+    assert.equal(rows.length, 15);
+    assert.equal(rows.every((r) => r.status === 'active'), true);
+    assert.equal(rows[0].created_by_name, 'boss');
+
+    const html = await (await client.request('/admin')).text();
+    assert.match(html, /สร้างรหัสเชิญใหม่ 15 รหัส/);
+    for (const row of rows) {
+      assert.ok(html.includes(row.code), `ตารางต้องแสดงรหัส ${row.code}`);
+      assert.ok(html.includes(`data-copy="${row.code}"`), 'ต้องมีปุ่มคัดลอกของแต่ละรหัส');
+    }
+  });
+});
+
+test('หน้า admin: จำนวนรหัสเชิญที่ไม่ถูกต้องต้องขึ้นข้อความเตือน ไม่สร้างอะไรเลย', async () => {
+  await withServer(async ({ db, client }) => {
+    makeUser(db, 'boss');
+    await client.login('boss', 'password123');
+
+    await client.post('/admin/invites/create', { count: '0' }, '/admin');
+    assert.match(await (await client.request('/admin')).text(), /ตั้งแต่ 1 ขึ้นไป/);
+
+    await client.post('/admin/invites/create', { count: '500' }, '/admin');
+    assert.match(await (await client.request('/admin')).text(), /ไม่เกิน 100/);
+
+    assert.equal(invites.listCodes(db).length, 0);
+  });
+});
+
+test('หน้า admin: ตารางรหัสเชิญแสดงสถานะใช้แล้ว/หมดอายุ ถูกต้อง', async () => {
+  await withServer(async ({ db, client }) => {
+    const admin = makeUser(db, 'boss');
+    const used = makeInvite(db, admin.id);
+    const expired = makeInvite(db, admin.id);
+    db.prepare("UPDATE invite_codes SET expires_at = datetime('now', '-1 hours') WHERE id = ?").run(expired.id);
+
+    await client.post('/register', { username: 'staff', password: 'password123', inviteCode: used.code });
+    await client.post('/logout', {}, '/items');
+
+    await client.login('boss', 'password123');
+    const html = await (await client.request('/admin')).text();
+    assert.match(html, /ใช้แล้ว/);
+    assert.match(html, /หมดอายุแล้ว/);
+    assert.match(html, /โดย staff/);
+  });
+});
+
+test('user ธรรมดาสร้างรหัสเชิญไม่ได้', async () => {
+  await withServer(async ({ db, client }) => {
+    makeUser(db, 'boss');
+    makeUser(db, 'staff');
+    await client.login('staff', 'password123');
+
+    const res = await client.post('/admin/invites/create', { count: '5' }, '/items');
+    assert.equal(res.status, 403);
+    assert.equal(invites.countActive(db), 0);
   });
 });

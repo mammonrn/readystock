@@ -3,10 +3,10 @@
 const { openDb } = require('../src/db');
 const { createApp } = require('../src/app');
 const users = require('../src/services/users');
+const invites = require('../src/services/invites');
 
 const TEST_CONFIG = {
   sessionSecret: 'test-secret-for-unit-tests',
-  inviteCode: 'INVITE-TEST',
   cookieSecure: false,
   pageSize: 50,
   loginMaxAttempts: 5,
@@ -18,14 +18,22 @@ function freshDb() {
   return openDb(':memory:');
 }
 
-/** สร้างผู้ใช้สำหรับเทสต์ (คนแรกจะเป็น admin อัตโนมัติ) */
+/**
+ * สร้างผู้ใช้สำหรับเทสต์
+ * คนแรกสมัครได้เลยและเป็น admin อัตโนมัติ คนถัดไปจะสร้างรหัสเชิญให้อัตโนมัติ
+ */
 function makeUser(db, username, password = 'password123') {
-  return users.register(db, {
-    username,
-    password,
-    inviteCode: TEST_CONFIG.inviteCode,
-    expectedInviteCode: TEST_CONFIG.inviteCode,
-  });
+  let inviteCode = null;
+  if (users.countUsers(db) > 0) {
+    const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").get();
+    inviteCode = invites.createCodes(db, { count: 1, createdBy: admin ? admin.id : null })[0].code;
+  }
+  return users.register(db, { username, password, inviteCode });
+}
+
+/** สร้างรหัสเชิญหนึ่งรหัสแล้วคืนค่าตัวรหัส */
+function makeInvite(db, createdBy = null, ttlHours = 24) {
+  return invites.createCodes(db, { count: 1, createdBy, ttlHours })[0];
 }
 
 /**
@@ -89,4 +97,4 @@ async function startServer(db, configOverrides = {}) {
   };
 }
 
-module.exports = { freshDb, makeUser, startServer, TEST_CONFIG };
+module.exports = { freshDb, makeUser, makeInvite, startServer, TEST_CONFIG };

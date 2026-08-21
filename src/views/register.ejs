@@ -3,9 +3,12 @@
   <div class="card auth-card">
     <h1>สมัครสมาชิก</h1>
     <% if (isFirstUser) { %>
-      <div class="flash flash-info">คุณเป็นผู้ใช้คนแรกของระบบ บัญชีนี้จะได้สิทธิ์ผู้ดูแลระบบ (admin) โดยอัตโนมัติ</div>
+      <div class="flash flash-info">
+        คุณเป็นผู้ใช้คนแรกของระบบ จึงสมัครได้เลยโดยไม่ต้องใช้รหัสเชิญ
+        และบัญชีนี้จะได้สิทธิ์ผู้ดูแลระบบ (admin) โดยอัตโนมัติ
+      </div>
     <% } else { %>
-      <p class="muted">ต้องใช้รหัสเชิญจากผู้ดูแลระบบจึงจะสมัครได้</p>
+      <p class="muted">ต้องใช้รหัสเชิญที่ผู้ดูแลระบบสร้างให้ รหัสหนึ่งรหัสใช้สมัครได้ครั้งเดียวและมีอายุ 24 ชั่วโมง</p>
     <% } %>
 
     <% if (error) { %><div class="flash flash-error"><%= error %></div><% } %>
@@ -20,8 +23,11 @@
       <label for="password">รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)</label>
       <input id="password" name="password" type="password" required minlength="6" autocomplete="new-password">
 
-      <label for="inviteCode">รหัสเชิญ</label>
-      <input id="inviteCode" name="inviteCode" required autocomplete="off">
+      <% if (!isFirstUser) { %>
+        <label for="inviteCode">รหัสเชิญ (8 ตัวอักษร)</label>
+        <input id="inviteCode" name="inviteCode" value="<%= inviteCode %>" required autocomplete="off"
+               class="code-input" maxlength="12" placeholder="เช่น K7QMX24P" spellcheck="false">
+      <% } %>
 
       <button class="btn btn-primary btn-block" type="submit">สมัครสมาชิก</button>
     </form>

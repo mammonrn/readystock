@@ -1,6 +1,6 @@
 'use strict';
 
-const { AppError } = require('./users');
+const { AppError } = require('../errors');
 const { addLog } = require('./logs');
 
 const SELECT_ITEM = `
