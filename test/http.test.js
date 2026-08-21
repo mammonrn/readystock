@@ -232,10 +232,12 @@ test('Export Excel: ได้ไฟล์ .xlsx ที่มีเฉพาะ�
     await workbook.xlsx.load(buffer);
     const sheet = workbook.getWorksheet('รายการสินค้า');
     assert.ok(sheet, 'ต้องมีชีต "รายการสินค้า"');
-    assert.equal(sheet.getRow(1).getCell(2).value, 'ชื่อสินค้า');
-    assert.equal(sheet.getRow(2).getCell(2).value, 'เมาส์');
-    assert.equal(sheet.getRow(2).getCell(5).value, 4);
-    assert.equal(sheet.getRow(3).getCell(2).value, null, 'สินค้าที่อยู่นอก filter ต้องไม่ถูก export');
+    assert.equal(sheet.getRow(1).getCell(2).value, 'รหัสสินค้า');
+    assert.equal(sheet.getRow(1).getCell(3).value, 'ชื่อสินค้า');
+    assert.match(String(sheet.getRow(2).getCell(2).value), /^[A-Z]+\d{4}$/, 'ต้อง export รหัสสินค้าออกมาด้วย');
+    assert.equal(sheet.getRow(2).getCell(3).value, 'เมาส์');
+    assert.equal(sheet.getRow(2).getCell(6).value, 4);
+    assert.equal(sheet.getRow(3).getCell(3).value, null, 'สินค้าที่อยู่นอก filter ต้องไม่ถูก export');
   });
 });
 
@@ -374,5 +376,87 @@ test('user ธรรมดาสร้างรหัสเชิญไม่ไ
     const res = await client.post('/admin/invites/create', { count: '5' }, '/items');
     assert.equal(res.status, 403);
     assert.equal(invites.countActive(db), 0);
+  });
+});
+
+test('ตารางรายการสินค้า: แสดงรหัสสินค้าเป็นคอลัมน์แรก และค้นหาด้วยรหัสได้จากช่องค้นหาเดิม', async () => {
+  await withServer(async ({ db, client }) => {
+    const user = makeUser(db, 'boss');
+    await client.login('boss', 'password123');
+
+    const office = taxonomy.list(db, 'offices')[0];
+    const phone = taxonomy.list(db, 'categories').find((c) => c.name === 'โทรศัพท์');
+    const computer = taxonomy.list(db, 'categories').find((c) => c.name === 'คอมพิวเตอร์');
+    items.createItem(db, { name: 'iPhone 15', quantity: 1, categoryId: phone.id, officeId: office.id }, user.id);
+    items.createItem(db, { name: 'Macbook', quantity: 1, categoryId: computer.id, officeId: office.id }, user.id);
+
+    const html = await (await client.request('/items')).text();
+    assert.match(html, /<th class="col-code">รหัส<\/th>\s*<th class="col-name">ชื่อสินค้า<\/th>/);
+    assert.match(html, /TLP0001/);
+    assert.match(html, /COM0001/);
+
+    const searched = await (await client.request('/items?q=tlp0001')).text();
+    assert.match(searched, /iPhone 15/);
+    assert.doesNotMatch(searched, /Macbook/);
+  });
+});
+
+test('เพิ่มสินค้าผ่านเว็บ: ได้รหัสสินค้าอัตโนมัติและบันทึกรหัสลง activity log', async () => {
+  await withServer(async ({ db, client }) => {
+    makeUser(db, 'boss');
+    await client.login('boss', 'password123');
+
+    const office = taxonomy.list(db, 'offices')[0];
+    const phone = taxonomy.list(db, 'categories').find((c) => c.name === 'โทรศัพท์');
+
+    for (const name of ['iPhone 15', 'iPhone 16']) {
+      const res = await client.post(
+        '/items/new',
+        { name, quantity: '1', unit: 'เครื่อง', note: '', categoryId: phone.id, officeId: office.id },
+        '/items/new'
+      );
+      assert.equal(res.status, 302);
+    }
+
+    assert.deepEqual(
+      items.listItems(db).rows.map((r) => r.item_code).sort(),
+      ['TLP0001', 'TLP0002']
+    );
+    assert.match(await (await client.request('/logs')).text(), /รหัส TLP0002/);
+  });
+});
+
+test('หน้า admin: เพิ่มหมวดหมู่พร้อมระบุรหัสนำหน้าเอง และแก้รหัสนำหน้าภายหลังได้', async () => {
+  await withServer(async ({ db, client }) => {
+    makeUser(db, 'boss');
+    await client.login('boss', 'password123');
+
+    await client.post('/admin/categories/create', { name: 'เครื่องเขียน', codePrefix: 'sta' }, '/admin');
+    const created = taxonomy.list(db, 'categories').find((c) => c.name === 'เครื่องเขียน');
+    assert.equal(created.code_prefix, 'STA');
+    assert.equal(created.sort_order, 4);
+
+    await client.post(`/admin/categories/${created.id}/rename`, { name: 'เครื่องเขียน', codePrefix: 'TLP' }, '/admin');
+    assert.match(await (await client.request('/admin')).text(), /รหัสนำหน้า .{1,20}TLP.{1,20} ถูกใช้กับหมวดหมู่/);
+    assert.equal(taxonomy.list(db, 'categories').find((c) => c.id === created.id).code_prefix, 'STA');
+
+    await client.post(`/admin/categories/${created.id}/rename`, { name: 'เครื่องเขียนสำนักงาน', codePrefix: 'STN' }, '/admin');
+    const renamed = taxonomy.list(db, 'categories').find((c) => c.id === created.id);
+    assert.equal(renamed.name, 'เครื่องเขียนสำนักงาน');
+    assert.equal(renamed.code_prefix, 'STN');
+  });
+});
+
+test('หน้า admin: หมวดหมู่ที่สร้างโดยไม่ระบุรหัสนำหน้า ต้องได้รหัสอัตโนมัติที่ไม่ซ้ำ', async () => {
+  await withServer(async ({ db, client }) => {
+    makeUser(db, 'boss');
+    await client.login('boss', 'password123');
+
+    await client.post('/admin/categories/create', { name: 'Computer parts', codePrefix: '' }, '/admin');
+    await client.post('/admin/categories/create', { name: 'Computer bags', codePrefix: '' }, '/admin');
+
+    const prefixes = taxonomy.list(db, 'categories').map((c) => c.code_prefix);
+    assert.equal(new Set(prefixes).size, prefixes.length, 'รหัสนำหน้าต้องไม่ซ้ำกัน');
+    assert.ok(prefixes.includes('COM2') && prefixes.includes('COM3'));
   });
 });

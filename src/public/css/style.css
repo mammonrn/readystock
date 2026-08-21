@@ -270,6 +270,30 @@ textarea { resize: vertical; }
 .tag-muted { background: #e6eaee; color: var(--muted); }
 .btn-copied { background: var(--success-bg); color: var(--success); border-color: #b7e0c9; }
 
+/* ---------- รหัสสินค้า / ลากสลับลำดับหมวดหมู่ ---------- */
+.item-code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary-dark);
+  background: #eef3fb;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.row-empty .item-code { background: #fde8e6; color: var(--danger); }
+.prefix-input { flex: 0 0 110px; text-align: center; }
+.hidden-form { display: none; }
+.col-drag { width: 62px; white-space: nowrap; color: var(--muted); }
+.drag-handle { cursor: grab; font-size: 15px; letter-spacing: -2px; margin-right: 4px; }
+.order-number { font-variant-numeric: tabular-nums; }
+[data-sortable] tbody tr { cursor: default; }
+[data-sortable] tbody tr.dragging { opacity: 0.45; background: var(--info-bg); }
+.move-buttons { display: inline-flex; gap: 2px; margin-right: 4px; }
+.move-buttons button { padding: 2px 7px; line-height: 1.1; }
+.move-buttons button[disabled] { opacity: 0.3; cursor: default; }
+#save-category-order { margin-top: 8px; }
+
 /* ---------- หน้า error ---------- */
 .center-card { max-width: 460px; margin: 8vh auto; text-align: center; }
 .error-code { font-size: 46px; margin: 0; color: var(--muted); }

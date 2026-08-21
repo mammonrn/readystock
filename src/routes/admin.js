@@ -41,7 +41,7 @@ function adminRoutes(db) {
   router.post('/admin/:kind(offices|categories)/create', (req, res) => {
     const { kind } = req.params;
     try {
-      const row = taxonomy.create(db, kind, req.body.name);
+      const row = taxonomy.create(db, kind, req.body.name, { codePrefix: req.body.codePrefix });
       setFlash(req, 'success', `เพิ่ม${KIND_LABEL[kind]} "${row.name}" เรียบร้อยแล้ว`);
     } catch (err) {
       if (!err.expected) throw err;
@@ -53,8 +53,9 @@ function adminRoutes(db) {
   router.post('/admin/:kind(offices|categories)/:id/rename', (req, res) => {
     const { kind, id } = req.params;
     try {
-      const row = taxonomy.rename(db, kind, Number(id), req.body.name);
-      setFlash(req, 'success', `เปลี่ยนชื่อ${KIND_LABEL[kind]}เป็น "${row.name}" เรียบร้อยแล้ว`);
+      const row = taxonomy.rename(db, kind, Number(id), req.body.name, { codePrefix: req.body.codePrefix });
+      const suffix = kind === 'categories' ? ` (รหัสนำหน้า ${row.code_prefix})` : '';
+      setFlash(req, 'success', `บันทึก${KIND_LABEL[kind]} "${row.name}" เรียบร้อยแล้ว${suffix}`);
     } catch (err) {
       if (!err.expected) throw err;
       setFlash(req, 'error', err.message);
@@ -67,6 +68,28 @@ function adminRoutes(db) {
     try {
       const row = taxonomy.remove(db, kind, Number(id));
       setFlash(req, 'success', `ลบ${KIND_LABEL[kind]} "${row.name}" เรียบร้อยแล้ว`);
+    } catch (err) {
+      if (!err.expected) throw err;
+      setFlash(req, 'error', err.message);
+    }
+    res.redirect('/admin');
+  });
+
+  // ---------- ลำดับการแสดงหมวดหมู่ ----------
+  router.post('/admin/categories/reorder', (req, res) => {
+    try {
+      taxonomy.reorderCategories(db, req.body.order);
+      setFlash(req, 'success', 'บันทึกลำดับหมวดหมู่ใหม่เรียบร้อยแล้ว');
+    } catch (err) {
+      if (!err.expected) throw err;
+      setFlash(req, 'error', err.message);
+    }
+    res.redirect('/admin');
+  });
+
+  router.post('/admin/categories/:id/move', (req, res) => {
+    try {
+      taxonomy.moveCategory(db, Number(req.params.id), String(req.body.direction));
     } catch (err) {
       if (!err.expected) throw err;
       setFlash(req, 'error', err.message);

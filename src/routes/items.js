@@ -61,6 +61,7 @@ function itemRoutes(db, config) {
 
       sheet.columns = [
         { header: 'ลำดับ', key: 'no', width: 8 },
+        { header: 'รหัสสินค้า', key: 'code', width: 14 },
         { header: 'ชื่อสินค้า', key: 'name', width: 34 },
         { header: 'หมวดหมู่', key: 'category', width: 16 },
         { header: 'สำนักงาน', key: 'office', width: 14 },
@@ -77,6 +78,7 @@ function itemRoutes(db, config) {
       rows.forEach((row, index) => {
         sheet.addRow({
           no: index + 1,
+          code: row.item_code,
           name: row.name,
           category: row.category_name,
           office: row.office_name,
